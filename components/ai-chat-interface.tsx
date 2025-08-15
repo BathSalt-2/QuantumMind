@@ -150,6 +150,8 @@ export function AIChatInterface({ onQuantumExperiment }: AIChatInterfaceProps) {
       const context = memorySystem.getConversationContext()
       const recentMemories = memorySystem.searchMemories(input, undefined, 3)
 
+      console.log("[v0] Sending chat request with context:", context?.insights?.length || 0, "insights")
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -160,7 +162,13 @@ export function AIChatInterface({ onQuantumExperiment }: AIChatInterfaceProps) {
         }),
       })
 
-      if (!response.ok) throw new Error("Failed to get response")
+      console.log("[v0] Chat response status:", response.status)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error("[v0] Chat API error response:", errorText)
+        throw new Error(`API request failed: ${response.status} - ${errorText}`)
+      }
 
       const reader = response.body?.getReader()
       if (!reader) throw new Error("No reader available")
@@ -188,7 +196,7 @@ export function AIChatInterface({ onQuantumExperiment }: AIChatInterfaceProps) {
                 )
               }
             } catch (e) {
-              // Ignore parsing errors
+              console.log("[v0] Chunk parsing error (non-critical):", e)
             }
           }
         }
@@ -196,14 +204,23 @@ export function AIChatInterface({ onQuantumExperiment }: AIChatInterfaceProps) {
 
       if (assistantContent) {
         memorySystem.addMessage("assistant", assistantContent)
+        console.log("[v0] Successfully processed chat response")
       }
 
       if (voiceEnabled && assistantContent) {
         setTimeout(() => speakText(assistantContent), 500)
       }
     } catch (error) {
-      console.error("Chat error:", error)
-      const errorMessage = "Sorry, I encountered an error. Please try again."
+      console.error("[v0] Chat error:", error)
+      let errorMessage = "Sorry, I encountered an error. Please try again."
+      if (error instanceof Error) {
+        if (error.message.includes("Failed to fetch")) {
+          errorMessage = "Network error. Please check your connection and try again."
+        } else if (error.message.includes("API request failed")) {
+          errorMessage = "Server error. Please try again in a moment."
+        }
+      }
+
       setMessages((prev) => [
         ...prev,
         {

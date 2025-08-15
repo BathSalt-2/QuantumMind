@@ -29,8 +29,8 @@ interface EntanglementConnection {
 }
 
 export function QuantumVisualizationEngine({
-  quantumState,
-  numQubits,
+  quantumState = [], // Added default empty array
+  numQubits = 1, // Added default value
   onStateChange,
 }: QuantumVisualizationEngineProps) {
   const [activeView, setActiveView] = useState("bloch")
@@ -44,9 +44,16 @@ export function QuantumVisualizationEngine({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const animationRef = useRef<number>()
 
+  const safeQuantumState =
+    quantumState && quantumState.length > 0 ? quantumState : Array(Math.pow(2, numQubits) * 2).fill(0)
+
   // Calculate Bloch sphere coordinates for each qubit
   const calculateBlochCoordinates = useCallback(
     (qubitIndex: number): BlochSpherePoint => {
+      if (!safeQuantumState || safeQuantumState.length === 0 || qubitIndex >= numQubits) {
+        return { x: 0, y: 0, z: 1, qubit: qubitIndex }
+      }
+
       // Extract single qubit state from full quantum state
       const stateSize = Math.pow(2, numQubits)
       let alpha = 0
@@ -57,10 +64,13 @@ export function QuantumVisualizationEngine({
         const binaryRep = i.toString(2).padStart(numQubits, "0")
         const qubitBit = Number.parseInt(binaryRep[numQubits - 1 - qubitIndex])
 
-        if (qubitBit === 0) {
-          alpha += quantumState[i * 2] // Real part
-        } else {
-          beta += quantumState[i * 2] // Real part
+        const realIndex = i * 2
+        if (realIndex < safeQuantumState.length) {
+          if (qubitBit === 0) {
+            alpha += safeQuantumState[realIndex] // Real part
+          } else {
+            beta += safeQuantumState[realIndex] // Real part
+          }
         }
       }
 
@@ -82,11 +92,15 @@ export function QuantumVisualizationEngine({
         qubit: qubitIndex,
       }
     },
-    [quantumState, numQubits],
+    [safeQuantumState, numQubits], // Updated dependency
   )
 
   // Calculate entanglement connections
   const calculateEntanglement = useCallback((): EntanglementConnection[] => {
+    if (!safeQuantumState || safeQuantumState.length === 0 || numQubits < 2) {
+      return []
+    }
+
     const connections: EntanglementConnection[] = []
 
     for (let i = 0; i < numQubits; i++) {
@@ -96,13 +110,17 @@ export function QuantumVisualizationEngine({
         const stateSize = Math.pow(2, numQubits)
 
         for (let k = 0; k < stateSize; k++) {
-          const amplitude = Math.sqrt(quantumState[k * 2] ** 2 + quantumState[k * 2 + 1] ** 2)
-          const binaryRep = k.toString(2).padStart(numQubits, "0")
-          const bit_i = Number.parseInt(binaryRep[numQubits - 1 - i])
-          const bit_j = Number.parseInt(binaryRep[numQubits - 1 - j])
+          const realIndex = k * 2
+          const imagIndex = k * 2 + 1
+          if (realIndex < safeQuantumState.length && imagIndex < safeQuantumState.length) {
+            const amplitude = Math.sqrt(safeQuantumState[realIndex] ** 2 + safeQuantumState[imagIndex] ** 2)
+            const binaryRep = k.toString(2).padStart(numQubits, "0")
+            const bit_i = Number.parseInt(binaryRep[numQubits - 1 - i])
+            const bit_j = Number.parseInt(binaryRep[numQubits - 1 - j])
 
-          if (bit_i !== bit_j) {
-            entanglement += amplitude
+            if (bit_i !== bit_j) {
+              entanglement += amplitude
+            }
           }
         }
 
@@ -117,7 +135,7 @@ export function QuantumVisualizationEngine({
     }
 
     return connections
-  }, [quantumState, numQubits])
+  }, [safeQuantumState, numQubits]) // Updated dependency
 
   // 3D Canvas rendering
   const render3DVisualization = useCallback(() => {
@@ -245,8 +263,10 @@ export function QuantumVisualizationEngine({
       const maxHeight = height * 0.8
 
       for (let i = 0; i < stateSize; i++) {
-        const real = quantumState[i * 2]
-        const imag = quantumState[i * 2 + 1]
+        const realIndex = i * 2
+        const imagIndex = i * 2 + 1
+        const real = realIndex < safeQuantumState.length ? safeQuantumState[realIndex] : 0
+        const imag = imagIndex < safeQuantumState.length ? safeQuantumState[imagIndex] : 0
         const amplitude = Math.sqrt(real * real + imag * imag)
         const phase = Math.atan2(imag, real)
 
@@ -276,7 +296,7 @@ export function QuantumVisualizationEngine({
     showEntanglement,
     calculateBlochCoordinates,
     calculateEntanglement,
-    quantumState,
+    safeQuantumState, // Updated dependency
     numQubits,
   ])
 
@@ -284,7 +304,8 @@ export function QuantumVisualizationEngine({
   useEffect(() => {
     if (isAnimating) {
       const animate = () => {
-        setRotationAngle((prev) => prev + 0.02 * animationSpeed[0])
+        const speed = animationSpeed && animationSpeed.length > 0 ? animationSpeed[0] : 1
+        setRotationAngle((prev) => prev + 0.02 * speed)
         render3DVisualization()
         animationRef.current = requestAnimationFrame(animate)
       }
@@ -377,7 +398,9 @@ export function QuantumVisualizationEngine({
               step={0.1}
               className="flex-1"
             />
-            <span className="text-xs text-gray-400 w-8">{animationSpeed[0].toFixed(1)}x</span>
+            <span className="text-xs text-gray-400 w-8">
+              {animationSpeed && animationSpeed.length > 0 ? animationSpeed[0].toFixed(1) : "1.0"}x
+            </span>
           </div>
 
           <Button
